@@ -1,5 +1,3 @@
-# syntax = docker/dockerfile:1.4
-
 ############################
 # 1) Build stage
 ############################
@@ -8,24 +6,18 @@ LABEL stage=builder
 
 WORKDIR /workspace/app
 
-# 1.1) Copy only wrapper + build scripts to leverage cache
-COPY gradlew settings.gradle build.gradle ./
-COPY gradle/wrapper gradle/wrapper
+# 1.1) Copy wrapper and scripts
+COPY gradlew ./gradlew
+COPY gradle ./gradle
+RUN chmod +x ./gradlew
 
-RUN chmod +x gradlew
+# 1.2) Copy project files and build jar
+COPY build.gradle .
+COPY settings.gradle .
+COPY src ./src
 
-# 1.2) Pre-fetch dependencies (cached)
-RUN --mount=type=cache,target=/root/.gradle \
-    --mount=type=cache,target=/workspace/app/.gradle \
-    ./gradlew --no-daemon dependencies
+RUN ./gradlew --no-daemon clean bootJar -x test
 
-# 1.3) Copy source and build the fat JAR
-COPY src src
-RUN --mount=type=cache,target=/root/.gradle \
-    --mount=type=cache,target=/workspace/app/.gradle \
-    ./gradlew --no-daemon clean bootJar -x test
-
-# 1.4) Rename the generated JAR to a fixed name
 RUN cp build/libs/*.jar app.jar
 
 ############################
@@ -35,12 +27,6 @@ FROM gcr.io/distroless/java17-debian11:nonroot AS runtime
 LABEL stage=runtime
 
 WORKDIR /app
-
-# 2.1) Copy единственный jar из builder
 COPY --from=builder /workspace/app/app.jar ./app.jar
-
-# 2.2) Открываем порт, если нужно
 EXPOSE 8080
-
-# 2.3) Запускаем приложение
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
